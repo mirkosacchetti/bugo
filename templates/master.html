@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Random Cards</title>
+    <link rel="icon" type="image/x-icon" href="">
+    <link rel="stylesheet" href="/static/reset.css">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <main>
+        <nav>
+            {{block "nav" .}}
+            <a href="/">
+                <h1>/</h1>
+            </a>
+            {{end}}
+        </nav>
+        <article>
+            {{block "main" .}}{{end}}
+        </article>
+    </main>
+    {{block "scripts" .}}{{end}}
+</body>
+
+</html>

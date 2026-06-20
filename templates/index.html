@@ -1,0 +1,9 @@
+{{define "main" }}
+<div>
+    {{ range .}}
+    <a href="/post/{{.ID}}.html">
+        <h2>{{ formatDate .Date}}, {{.Title}}</h2>
+    </a>
+    {{end}}
+</div>
+{{end}}

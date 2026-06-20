@@ -1,0 +1,64 @@
+html {
+    background-color: #282828;
+    line-height: 1.5rem;
+    font-family: 'Fira Code', monospace;
+    font-size: 16px;
+    color: #282828;
+    height: 100vh;
+}
+
+body {
+    margin: auto;
+    max-width: 42rem;
+    color: #ebdbb2;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+body>main,
+body>header {
+    margin: 0.25rem;
+}
+
+nav {
+    padding: 1em;
+}
+
+h1 {
+    color: #8ec07c;
+    font-size: 1.64rem;
+}
+
+h2 {
+    color: #8ec07c;
+    font-size: 1.32rem;
+}
+
+h3 {
+    color: #8ec07c;
+    font-size: 1.16;
+}
+
+p {
+    text-align: justify;
+    text-justify: inter-word;
+    font-size: 1rem;
+    margin: 0;
+}
+
+ul,
+ol {
+    margin: 0;
+    padding: 0 1rem;
+}
+
+li {
+    margin: 1rem;
+    padding: 0 0.5rem;
+}
+
+article {
+    min-height: 12em;
+    padding: 0.5rem;
+    margin-bottom: 1rem;
+}

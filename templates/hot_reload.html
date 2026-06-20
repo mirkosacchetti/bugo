@@ -1,0 +1,21 @@
+{{define "scripts"}}
+<script>
+    (function () {
+        const evt = new EventSource("/dev/sse");
+        evt.onmessage = function (e) {
+            if (e.data === "css") {
+                document.querySelectorAll('link[rel="stylesheet"]').forEach(function (link) {
+                    const href = link.getAttribute("href").split("?")[0];
+                    link.setAttribute("href", href + "?t=" + Date.now());
+                });
+            } else {
+                location.reload();
+            }
+        };
+        evt.onerror = function () {
+            evt.close();
+            setTimeout(function () {location.reload();}, 1000);
+        };
+    })();
+</script>
+{{end}}
