@@ -1,0 +1,9 @@
+pages:
+  stage: deploy
+  script:
+    - echo "Deploy GitLab Pages"
+  artifacts:
+    paths:
+      - public
+  only:
+    - master
