@@ -25,7 +25,7 @@ type Post struct {
 
 // URL is the site-absolute path to the rendered post page.
 func (p Post) URL() string {
-	return "/post/" + p.ID + ".html"
+	return basePath + "/post/" + p.ID + ".html"
 }
 
 // RenderData is the top-level value passed to the master template: Posts for the
@@ -37,18 +37,41 @@ type RenderData struct {
 
 var devMode bool
 
+// postsDir is where the .md posts live: the bugo folder of the Obsidian notes
+// vault (BUGO_POSTS overrides it; a leading ~ is expanded). basePath is the URL prefix of the published site
+// (BUGO_BASE, e.g. "/bugo" for a GitHub Pages project site); empty in dev.
+var (
+	postsDir = expandHome(envOr("BUGO_POSTS", "~/Notes/bugo/posts"))
+	basePath = strings.TrimRight(os.Getenv("BUGO_BASE"), "/")
+)
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func expandHome(p string) string {
+	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(p, "~/") {
+		return filepath.Join(home, p[2:])
+	}
+	return p
+}
+
 func main() {
 	args := os.Args
 	if len(args) > 1 {
 		switch args[1] {
 		case "dev":
 			devMode = true
+			basePath = ""
 			fs := http.FileServer(http.Dir("public/"))
 			http.HandleFunc("/", indexHandler)
 			http.Handle("/static/", fs)
 			http.HandleFunc("/post/{id}", postHandler)
 			http.HandleFunc("/dev/sse", sseHandler)
-			if err := startWatcher("templates", "public", "posts"); err != nil {
+			if err := startWatcher("templates", "public", postsDir); err != nil {
 				log.Printf("watcher error: %v", err)
 			}
 			log.Printf("Server on http://localhost:3000")
@@ -110,6 +133,7 @@ func parseTemplates(files ...string) *template.Template {
 	}
 	tmpl := template.New("master.html").Funcs(template.FuncMap{
 		"formatDate": formatDate,
+		"base":       func() string { return basePath },
 	})
 	return template.Must(tmpl.ParseFiles(files...))
 }
@@ -139,10 +163,10 @@ func parsePost(content []byte) (Post, error) {
 	return post, nil
 }
 
-// loadPost loads a single post by id from posts/<id>.md (used by the dev
+// loadPost loads a single post by id from <postsDir>/<id>.md (used by the dev
 // server). Returns (nil, nil) when not found.
 func loadPost(id string) (*Post, error) {
-	content, err := os.ReadFile("posts/" + id + ".md")
+	content, err := os.ReadFile(filepath.Join(postsDir, id+".md"))
 	if err != nil {
 		return nil, nil // not found
 	}
@@ -154,9 +178,9 @@ func loadPost(id string) (*Post, error) {
 	return &post, nil
 }
 
-// loadPosts reads every posts/<id>.md, skips drafts, and sorts newest first.
+// loadPosts reads every <postsDir>/<id>.md, skips drafts, and sorts newest first.
 func loadPosts() ([]Post, error) {
-	entries, err := os.ReadDir("posts")
+	entries, err := os.ReadDir(postsDir)
 	if err != nil {
 		return nil, err
 	}
@@ -165,13 +189,13 @@ func loadPosts() ([]Post, error) {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".md" {
 			continue
 		}
-		content, err := os.ReadFile("posts/" + e.Name())
+		content, err := os.ReadFile(filepath.Join(postsDir, e.Name()))
 		if err != nil {
 			return nil, err
 		}
 		post, err := parsePost(content)
 		if err != nil {
-			return nil, fmt.Errorf("posts/%s: %w", e.Name(), err)
+			return nil, fmt.Errorf("%s: %w", filepath.Join(postsDir, e.Name()), err)
 		}
 		post.ID = strings.TrimSuffix(e.Name(), ".md")
 		if !post.IsDraft {
