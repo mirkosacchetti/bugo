@@ -77,6 +77,11 @@ func main() {
 			log.Printf("Server on http://localhost:3000")
 			log.Fatal(http.ListenAndServe(":3000", nil))
 
+		case "check":
+			if err := checkPosts(os.Stdout); err != nil {
+				log.Fatal(err)
+			}
+
 		case "pub":
 			if err := os.MkdirAll("public/post", 0755); err != nil {
 				log.Fatal(err)
@@ -210,4 +215,49 @@ func loadPosts() ([]Post, error) {
 
 func formatDate(t time.Time) string {
 	return t.Format("02 Jan 2006")
+}
+
+// checkPosts parses every post, drafts included, and prints one line per post
+// (id, state, date, title), newest first. It fails on the first malformed post
+// or on a missing title or date, which would otherwise break `pub`.
+func checkPosts(w io.Writer) error {
+	entries, err := os.ReadDir(postsDir)
+	if err != nil {
+		return err
+	}
+	var posts []Post
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".md" {
+			continue
+		}
+		path := filepath.Join(postsDir, e.Name())
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		post, err := parsePost(content)
+		if err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		if post.Title == "" {
+			return fmt.Errorf("%s: title mancante", path)
+		}
+		if post.Date.IsZero() {
+			return fmt.Errorf("%s: date mancante o non nel formato GG-MM-AAAA HH:MM", path)
+		}
+		post.ID = strings.TrimSuffix(e.Name(), ".md")
+		posts = append(posts, post)
+	}
+	sort.Slice(posts, func(i, j int) bool {
+		return posts[i].Date.After(posts[j].Date)
+	})
+	for _, p := range posts {
+		state := "pubblicato"
+		if p.IsDraft {
+			state = "bozza"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", p.ID, state, p.Date.Format("02-01-2006 15:04"), p.Title)
+	}
+	fmt.Fprintf(w, "ok: %d post\n", len(posts))
+	return nil
 }
