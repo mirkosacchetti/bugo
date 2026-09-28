@@ -2,6 +2,13 @@
 <script>
     (function () {
         const evt = new EventSource("/dev/sse");
+
+        // Always close the stream before the page goes away (reload, navigation,
+        // tab close). Browsers keep HTTP/1.1 connections alive for reuse, so a
+        // stream left open lingers as a half-dead connection; after ~6 of them
+        // the per-host connection limit is exhausted and the page hangs.
+        window.addEventListener("pagehide", function () { evt.close(); });
+
         evt.onmessage = function (e) {
             if (e.data === "css") {
                 document.querySelectorAll('link[rel="stylesheet"]').forEach(function (link) {
@@ -9,12 +16,13 @@
                     link.setAttribute("href", href + "?t=" + Date.now());
                 });
             } else {
+                evt.close();
                 location.reload();
             }
         };
         evt.onerror = function () {
             evt.close();
-            setTimeout(function () {location.reload();}, 1000);
+            setTimeout(function () { location.reload(); }, 1000);
         };
     })();
 </script>

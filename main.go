@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"html/template"
 	"io"
 	"log"
 	"net/http"
@@ -9,7 +10,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"text/template"
 	"time"
 )
 
@@ -20,13 +20,19 @@ type Post struct {
 	Path     string
 	Date     time.Time
 	IsDraft  bool
-	HTMLBody string
+	HTMLBody template.HTML
 }
 
-type Page struct {
-	Title string
-	Path  string
-	Body  string
+// URL is the site-absolute path to the rendered post page.
+func (p Post) URL() string {
+	return "/post/" + p.ID + ".html"
+}
+
+// RenderData is the top-level value passed to the master template: Posts for the
+// index, Post for a single article.
+type RenderData struct {
+	Posts []Post
+	Post  *Post
 }
 
 var devMode bool
@@ -35,7 +41,7 @@ func main() {
 	args := os.Args
 	if len(args) > 1 {
 		switch args[1] {
-		case "dev": // show current post in browser
+		case "dev":
 			devMode = true
 			fs := http.FileServer(http.Dir("public/"))
 			http.HandleFunc("/", indexHandler)
@@ -48,11 +54,13 @@ func main() {
 			log.Printf("Server on http://localhost:3000")
 			log.Fatal(http.ListenAndServe(":3000", nil))
 
-		case "pub": // compile and pubblish the new post
-			os.MkdirAll("public/post", 0755)
+		case "pub":
+			if err := os.MkdirAll("public/post", 0755); err != nil {
+				log.Fatal(err)
+			}
 			posts, err := loadPosts()
 			if err != nil {
-				log.Printf("watcher error: %v", err)
+				log.Fatalf("load posts: %v", err)
 			}
 			for _, post := range posts {
 				pf, err := os.Create("public/post/" + post.ID + ".html")
@@ -68,7 +76,6 @@ func main() {
 			}
 			renderIndex(pf, posts)
 			pf.Close()
-
 		}
 	}
 }
@@ -76,7 +83,8 @@ func main() {
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	posts, err := loadPosts()
 	if err != nil {
-		fmt.Fprintln(w, err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	renderIndex(w, posts)
 }
@@ -86,7 +94,12 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	id = strings.TrimSuffix(id, ".html")
 	post, err := loadPost(id)
 	if err != nil {
-		fmt.Fprintln(w, err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if post == nil {
+		http.NotFound(w, r)
+		return
 	}
 	renderPost(w, *post)
 }
@@ -102,66 +115,65 @@ func parseTemplates(files ...string) *template.Template {
 }
 
 func renderPost(w io.Writer, post Post) {
+	data := RenderData{Post: &post}
 	tmpl := parseTemplates("templates/master.html", "templates/post.html")
-	tmpl.ExecuteTemplate(w, "master.html", post)
+	tmpl.ExecuteTemplate(w, "master.html", data)
 }
+
 func renderIndex(w io.Writer, posts []Post) {
+	data := RenderData{Posts: posts}
 	tmpl := parseTemplates("templates/master.html", "templates/index.html")
-	tmpl.ExecuteTemplate(w, "master.html", posts)
+	tmpl.ExecuteTemplate(w, "master.html", data)
 }
 
-func loadPost(fn string) (*Post, error) {
-	files, err := os.ReadDir("posts")
+// parsePost splits a raw .md file into front matter and body and builds a Post.
+// The caller fills in ID.
+func parsePost(content []byte) (Post, error) {
+	parts := strings.SplitN(string(content), "+++", 3)
+	if len(parts) != 3 {
+		return Post{}, fmt.Errorf("invalid front matter: expected opening and closing +++ delimiters")
+	}
+	// parts[0] is empty because the file starts with +++.
+	post := parseFrontMatter(parts[1])
+	post.HTMLBody = template.HTML(parseMD(parts[2]))
+	return post, nil
+}
+
+// loadPost loads a single post by id from posts/<id>.md (used by the dev
+// server). Returns (nil, nil) when not found.
+func loadPost(id string) (*Post, error) {
+	content, err := os.ReadFile("posts/" + id + ".md")
+	if err != nil {
+		return nil, nil // not found
+	}
+	post, err := parsePost(content)
 	if err != nil {
 		return nil, err
 	}
-	for _, file := range files {
-		if filepath.Ext(file.Name()) != ".md" {
-			continue
-		}
-		p := strings.TrimSuffix(file.Name(), ".md")
-		if p == fn {
-			content, err := os.ReadFile("posts/" + file.Name())
-			if err != nil {
-				return nil, err
-			}
-			parts := strings.SplitN(string(content), "+++", 3)
-			if len(parts) != 3 {
-				return nil, fmt.Errorf("invalid front matter: expected opening and closing +++ delimiters")
-			}
-			// parts[0] is empty because the file starts with +++.
-			post := parseFrontMatter(parts[1])
-			post.HTMLBody = parseMD(parts[2])
-			//		if post.IsDraft {
-			return &post, nil
-			//		}
-		}
-	}
-	return nil, nil
+	post.ID = id
+	return &post, nil
 }
 
+// loadPosts reads every posts/<id>.md, skips drafts, and sorts newest first.
 func loadPosts() ([]Post, error) {
-	var posts []Post
-	files, err := os.ReadDir("posts")
+	entries, err := os.ReadDir("posts")
 	if err != nil {
 		return nil, err
 	}
-	for _, file := range files {
-		if filepath.Ext(file.Name()) != ".md" {
+	var posts []Post
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".md" {
 			continue
 		}
-		content, err := os.ReadFile("posts/" + file.Name())
+		content, err := os.ReadFile("posts/" + e.Name())
 		if err != nil {
 			return nil, err
 		}
-		parts := strings.SplitN(string(content), "+++", 3)
-		if len(parts) != 3 {
-			return posts, fmt.Errorf("invalid front matter: expected opening and closing +++ delimiters")
+		post, err := parsePost(content)
+		if err != nil {
+			return nil, fmt.Errorf("posts/%s: %w", e.Name(), err)
 		}
-		// parts[0] is empty because the file starts with +++.
-		post := parseFrontMatter(parts[1])
-		post.ID = strings.TrimSuffix(file.Name(), ".md")
-		post.HTMLBody = parseMD(parts[2])
+		post.ID = strings.TrimSuffix(e.Name(), ".md")
 		if !post.IsDraft {
 			posts = append(posts, post)
 		}
@@ -174,16 +186,4 @@ func loadPosts() ([]Post, error) {
 
 func formatDate(t time.Time) string {
 	return t.Format("02 Jan 2006")
-}
-
-func parseMD(m string) string {
-	var html string
-	for line := range strings.Lines(m) {
-		line = strings.TrimSuffix(line, "\n")
-		line = strings.TrimSuffix(line, "\r")
-		if len(line) > 0 {
-			html = html + string(parseMarkdown([]byte(line)))
-		}
-	}
-	return html
 }

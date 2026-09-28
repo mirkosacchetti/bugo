@@ -1,7 +1,7 @@
 {{define "main" }}
 <div>
-    {{ range .}}
-    <a href="/post/{{.ID}}.html">
+    {{ range .Posts}}
+    <a href="{{.URL}}">
         <h2>{{ formatDate .Date}}, {{.Title}}</h2>
     </a>
     {{end}}
